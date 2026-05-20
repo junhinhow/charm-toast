@@ -1,0 +1,16 @@
+name: smoke
+on:
+  push:
+    paths:
+      - '.forgejo/workflows/smoke.yml'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: docker
+    steps:
+      - name: echo
+        run: |
+          echo "Hello from Forgejo Actions on debian-008"
+          echo "host=$(hostname)"
+          echo "arch=$(uname -m)"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
