@@ -514,6 +514,7 @@ func TestToastManagerConcorrencia(t *testing.T) {
 				_ = tm.Render(80)
 				_ = tm.Count()
 				_ = tm.Toasts()
+				_ = tm.Tick()
 				tm.Remove(toast.ID)
 				tm.Cleanup()
 			}
@@ -523,5 +524,80 @@ func TestToastManagerConcorrencia(t *testing.T) {
 
 	if got := tm.MaxVisible(); got < 0 {
 		t.Errorf("valor de MaxVisible invalido: %d", got)
+	}
+}
+
+func TestTickRetornaNilSemToasts(t *testing.T) {
+	tm := NewToastManager()
+	if cmd := tm.Tick(); cmd != nil {
+		t.Error("Tick deveria devolver nil quando nao ha toasts")
+	}
+}
+
+func TestTickRetornaNilParaToastPersistente(t *testing.T) {
+	tm := NewToastManager()
+	tm.AddInfo("persistente", 0)
+	if cmd := tm.Tick(); cmd != nil {
+		t.Error("Tick deveria devolver nil para toast persistente")
+	}
+}
+
+// TestTickDisparaExpiredMsg verifica a integracao com o Bubble Tea: o
+// comando agendado entrega a mensagem de expiracao no momento previsto.
+func TestTickDisparaExpiredMsg(t *testing.T) {
+	tm := NewToastManager()
+	tm.AddInfo("expira", 50*time.Millisecond)
+
+	cmd := tm.Tick()
+	if cmd == nil {
+		t.Fatal("Tick deveria devolver um comando quando ha toast com expiracao")
+	}
+
+	resultado := make(chan any, 1)
+	go func() {
+		resultado <- cmd()
+	}()
+
+	select {
+	case msg := <-resultado:
+		if _, ok := msg.(ExpiredMsg); !ok {
+			t.Fatalf("esperava ExpiredMsg, obteve %T", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ExpiredMsg nao foi entregue a tempo")
+	}
+}
+
+func TestNextExpiry(t *testing.T) {
+	tm := NewToastManager()
+	if d := tm.NextExpiry(); d != 0 {
+		t.Errorf("sem toasts esperava 0, obteve %v", d)
+	}
+
+	tm.AddInfo("persistente", 0)
+	if d := tm.NextExpiry(); d != 0 {
+		t.Errorf("apenas toasts persistentes esperavam 0, obteve %v", d)
+	}
+
+	tm.AddInfo("curto", 200*time.Millisecond)
+	d := tm.NextExpiry()
+	if d <= 0 || d > 200*time.Millisecond {
+		t.Errorf("esperava um prazo entre 0 e 200ms, obteve %v", d)
+	}
+}
+
+func TestExpiredMsgTrazIdentificadores(t *testing.T) {
+	tm := NewToastManager()
+	toast := NewToast("expirado", 100*time.Millisecond)
+	tm.Add(toast)
+
+	cmd := tm.Tick()
+	if cmd == nil {
+		t.Fatal("Tick deveria devolver um comando")
+	}
+
+	msg := cmd().(ExpiredMsg)
+	if len(msg.IDs) != 1 || msg.IDs[0] != toast.ID {
+		t.Errorf("esperava o identificador '%s', obteve %v", toast.ID, msg.IDs)
 	}
 }
